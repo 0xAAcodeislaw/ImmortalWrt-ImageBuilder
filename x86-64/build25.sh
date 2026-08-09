@@ -1,7 +1,28 @@
 #!/bin/bash
+set -Eeuo pipefail
+
 # Log file for debugging
 # 目前支持少部分第三方软件apk 通过打开shell/apk-custom-packages.sh的注释来集成
 source shell/apk-custom-packages.sh
+CUSTOM_PACKAGES="${CUSTOM_PACKAGES:-}"
+PROFILE="${PROFILE:-}"
+INCLUDE_DOCKER="${INCLUDE_DOCKER:-no}"
+ENABLE_PPPOE="${ENABLE_PPPOE:-no}"
+PPPOE_ACCOUNT="${PPPOE_ACCOUNT:-}"
+PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
+
+if [[ -z "$PROFILE" ]]; then
+  echo "Error: PROFILE must be set to the rootfs size in MB." >&2
+  exit 1
+fi
+
+# 25.12 的官方 openvpn-openssl 已占用 /etc/config/openvpn，
+# luci-app-openvpn-server 会因覆盖同名配置文件导致 apk 安装失败。
+if printf ' %s ' "$CUSTOM_PACKAGES" | grep -Eq '(^|[[:space:]])(luci-app-openvpn-server|luci-i18n-openvpn-server-zh-cn)([[:space:]]|$)'; then
+  echo "Error: luci-app-openvpn-server is incompatible with ImmortalWrt 25.12; use luci-i18n-openvpn-zh-cn instead." >&2
+  exit 1
+fi
+
 echo "第三方apk软件包: $CUSTOM_PACKAGES"
 LOGFILE="/tmp/uci-defaults-log.txt"
 echo "Starting 99-custom.sh at $(date)" >> $LOGFILE
@@ -31,7 +52,7 @@ else
 
   # 拷贝 run/x86 下所有 run 文件和apk文件 到 extra-packages 目录
   mkdir -p /home/build/immortalwrt/extra-packages
-  cp -r /tmp/store-apk-repo/run/x86/* /home/build/immortalwrt/extra-packages/
+  cp -a /tmp/store-apk-repo/run/x86/. /home/build/immortalwrt/extra-packages/
 
   echo "✅ Run files copied to extra-packages:"
   # 解压并拷贝apk到packages目录
@@ -71,12 +92,12 @@ if [ "$INCLUDE_DOCKER" = "yes" ]; then
 fi
 
 # 若构建openclash 则添加内核
-if echo "$PACKAGES" | grep -q "luci-app-openclash"; then
+if [[ " $PACKAGES " == *" luci-app-openclash "* ]]; then
     echo "✅ 已选择 luci-app-openclash，添加 openclash core"
     mkdir -p files/etc/openclash/core
     # Download clash_meta
     META_URL="https://raw.githubusercontent.com/vernesong/OpenClash/core/master/meta/clash-linux-amd64-v1.tar.gz"
-    wget -qO- $META_URL | tar xOvz > files/etc/openclash/core/clash_meta
+    wget -qO- "$META_URL" | tar xOvz > files/etc/openclash/core/clash_meta
     chmod +x files/etc/openclash/core/clash_meta
     # Download GeoIP and GeoSite
     wget -q https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -O files/etc/openclash/GeoIP.dat
@@ -92,7 +113,7 @@ else
     echo "⚪️ 未选择 luci-app-openclash"
 fi
 
-if echo "$PACKAGES" | grep -q "luci-app-ssr-plus"; then
+if [[ " $PACKAGES " == *" luci-app-ssr-plus "* ]]; then
     echo "✅ 已选择 luci-app-ssr-plus，添加 mihomo core"
     mkdir -p files/usr/bin
     # Download mihomo
@@ -110,9 +131,7 @@ fi
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Building image with the following packages:"
 echo "$PACKAGES"
 
-make image PROFILE="generic" PACKAGES="$PACKAGES" FILES="/home/build/immortalwrt/files" ROOTFS_PARTSIZE=$PROFILE
-
-if [ $? -ne 0 ]; then
+if ! make image PROFILE="generic" PACKAGES="$PACKAGES" FILES="/home/build/immortalwrt/files" ROOTFS_PARTSIZE="$PROFILE"; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') - Error: Build failed!"
     exit 1
 fi
