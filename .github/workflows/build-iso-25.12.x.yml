@@ -66,19 +66,27 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set executable permissions
-        run: chmod +x ${{ github.workspace }}/x86-64/build25.sh
+        run: chmod +x "${{ github.workspace }}/x86-64/build25.sh"
       
       - name: Validate PPPoE Inputs
+        env:
+          ENABLE_PPPOE: ${{ inputs.enable_pppoe }}
+          PPPOE_ACCOUNT: ${{ inputs.pppoe_account }}
+          PPPOE_PASSWORD: ${{ inputs.pppoe_password }}
         run: |
-          if [[ "${{ github.event.inputs.enable_pppoe }}" == "yes" ]]; then
-            if [[ -z "${{ github.event.inputs.pppoe_account }}" || -z "${{ github.event.inputs.pppoe_password }}" ]]; then
+          set -euo pipefail
+          if [[ "$ENABLE_PPPOE" == "yes" ]]; then
+            if [[ -z "$PPPOE_ACCOUNT" || -z "$PPPOE_PASSWORD" ]]; then
               echo "Error: PPPoE account and password must be provided when PPPoE is enabled!"
               exit 1
             fi
           fi
       - name: Enable Store integration
+        env:
+          ENABLE_STORE: ${{ inputs.enable_store }}
         run: |
-          if [ "${{ github.event.inputs.enable_store }}" == "true" ]; then
+          set -euo pipefail
+          if [[ "$ENABLE_STORE" == "true" ]]; then
             echo 'CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-store"' >> shell/apk-custom-packages.sh
             echo "✅ 已追加 luci-app-store"
           else
@@ -86,9 +94,16 @@ jobs:
           fi
 
       - name: ✅ 正在构建ImmortalWrt固件25.12.x
+        env:
+          PROFILE_INPUT: ${{ inputs.profile }}
+          INCLUDE_DOCKER: ${{ inputs.include_docker }}
+          LUCI_VERSION: ${{ inputs.luci_version }}
+          ENABLE_PPPOE: ${{ inputs.enable_pppoe }}
+          PPPOE_ACCOUNT: ${{ inputs.pppoe_account }}
+          PPPOE_PASSWORD: ${{ inputs.pppoe_password }}
         run: |
-          profile="${{ github.event.inputs.profile }}"
-          case "$profile" in
+          set -Eeuo pipefail
+          case "$PROFILE_INPUT" in
             1G)
               ROOTFS_SIZE=1024
               ;;
@@ -101,29 +116,50 @@ jobs:
             4G)
               ROOTFS_SIZE=4096
               ;;
+            *)
+              echo "Error: unsupported profile: $PROFILE_INPUT" >&2
+              exit 1
+              ;;
           esac
-          echo "ROOTFS_SIZE=$ROOTFS_SIZE" >> $GITHUB_ENV
-          include_docker="${{ github.event.inputs.include_docker }}"
-          luci_version="${{ github.event.inputs.luci_version }}"
-          echo "Building for rootfs_size: $profile"
+          echo "ROOTFS_SIZE=$ROOTFS_SIZE" >> "$GITHUB_ENV"
+          image="immortalwrt/imagebuilder:x86-64-openwrt-${LUCI_VERSION}"
+          mkdir -p "${{ github.workspace }}/bin" "${{ github.workspace }}/files" "${{ github.workspace }}/custom"
+          echo "Building $image with rootfs size: ${ROOTFS_SIZE} MB"
+          # ImageBuilder 镜像已经携带与 LUCI_VERSION 对应的 .config；
+          # 不要覆盖它，否则会把 25.12.1 混成仓库里遗留的 25.12.0-rc1 配置。
           docker run --rm -i \
             --user root \
+            --workdir /home/build/immortalwrt \
             -v "${{ github.workspace }}/bin:/home/build/immortalwrt/bin" \
             -v "${{ github.workspace }}/files:/home/build/immortalwrt/files" \
             -v "${{ github.workspace }}/custom:/home/build/immortalwrt/files/etc/config" \
-            -v "${{ github.workspace }}/x86-64/imm25.config:/home/build/immortalwrt/.config" \
             -v "${{ github.workspace }}/shell:/home/build/immortalwrt/shell" \
             -v "${{ github.workspace }}/x86-64/build25.sh:/home/build/immortalwrt/build.sh" \
-            -e PROFILE=$ROOTFS_SIZE \
-            -e INCLUDE_DOCKER=$include_docker \
-            -e ENABLE_PPPOE=${{ inputs.enable_pppoe }} \
-            -e PPPOE_ACCOUNT=${{ inputs.pppoe_account }} \
-            -e PPPOE_PASSWORD=${{ inputs.pppoe_password }} \
-          immortalwrt/imagebuilder:x86-64-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
+            -e "PROFILE=$ROOTFS_SIZE" \
+            -e "INCLUDE_DOCKER=$INCLUDE_DOCKER" \
+            -e "ENABLE_PPPOE=$ENABLE_PPPOE" \
+            -e "PPPOE_ACCOUNT=$PPPOE_ACCOUNT" \
+            -e "PPPOE_PASSWORD=$PPPOE_PASSWORD" \
+          "$image" /bin/bash /home/build/immortalwrt/build.sh
+
+      - name: Verify x86-64 EFI firmware output
+        run: |
+          set -Eeuo pipefail
+          shopt -s nullglob
+          images=("${{ github.workspace }}"/bin/targets/x86/64/*squashfs-combined-efi.img.gz)
+          if (( ${#images[@]} != 1 )); then
+            echo "Error: expected exactly one squashfs EFI image, found ${#images[@]}." >&2
+            printf '%s\n' "${images[@]}" >&2
+            exit 1
+          fi
+          ls -lh "${images[0]}"
 
       - name: ✅ 复制固件到根目录
         run: |
-          cp ${{ github.workspace }}/bin/targets/x86/64/*squashfs-combined-efi.img.gz ${{ github.workspace }}
+          set -Eeuo pipefail
+          shopt -s nullglob
+          images=("${{ github.workspace }}"/bin/targets/x86/64/*squashfs-combined-efi.img.gz)
+          cp "${images[0]}" "${{ github.workspace }}/"
 
       - name: ✅ 上传固件到 artifact (for ISO generation)
         uses: actions/upload-artifact@v6
@@ -144,8 +180,13 @@ jobs:
 
       - name: ⏬ 同步 img-installer 项目 准备制作ISO
         run: |
-          git clone https://github.com/wukongdaily/img-installer.git
+          set -Eeuo pipefail
+          git clone --depth=1 https://github.com/wukongdaily/img-installer.git
           cd img-installer
+          # 固定已验证的上游版本，避免 Debian Live 构建脚本随 master 漂移。
+          git fetch --depth=1 origin 361ea6138094a2417e62edd01f73fa1160e93e01
+          git checkout --detach 361ea6138094a2417e62edd01f73fa1160e93e01
+          git log -1 --oneline
 
       - name: Set executable permissions for scripts
         run: |
@@ -154,9 +195,34 @@ jobs:
 
       - name: ✅ 制作 25.12.x ISO
         run: |
-          firmware_file=$(ls *squashfs-combined-efi.img.gz)
+          set -Eeuo pipefail
+          shopt -s nullglob
+          firmware_files=("${{ github.workspace }}"/*squashfs-combined-efi.img.gz)
+          if (( ${#firmware_files[@]} != 1 )); then
+            echo "Error: expected exactly one EFI firmware archive, found ${#firmware_files[@]}." >&2
+            printf '%s\n' "${firmware_files[@]}" >&2
+            exit 1
+          fi
+          firmware_file="${firmware_files[0]##*/}"
           cd img-installer
           bash autobuild/autobuild.sh "../$firmware_file"
+          test -s output/custom-installer-x86_64.iso
+
+      - name: Verify PVE bootable ISO
+        run: |
+          set -Eeuo pipefail
+          iso="${{ github.workspace }}/img-installer/output/custom-installer-x86_64.iso"
+          test -s "$iso"
+          file "$iso"
+          file "$iso" | grep -q "ISO 9660"
+          ls -lh "$iso"
+
+      - name: Upload PVE ISO artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: immortalwrt-25.12-x86-64-pve-iso
+          path: img-installer/output/custom-installer-x86_64.iso
+          if-no-files-found: error
 
       - name: 🚀 上传 ISO 到 Release
         uses: softprops/action-gh-release@v3
