@@ -9,13 +9,10 @@ on:
   workflow_dispatch:
     inputs:
       luci_version:
-        description: "选择luci版本"
+        description: "ImmortalWrt版本（latest自动选择最新稳定版，也可填写例如25.12.1）"
         required: false
-        default: "25.12.1"
-        type: choice
-        options:
-          - 25.12.0
-          - 25.12.1
+        default: "latest"
+        type: string
       profile:
         description: '选择软件包空间大小'
         required: true
@@ -93,11 +90,16 @@ jobs:
             echo "❎ 未启用 luci-app-store"
           fi
 
+      - name: Resolve ImmortalWrt ImageBuilder version
+        env:
+          REQUESTED_VERSION: ${{ inputs.luci_version }}
+          IMAGEBUILDER_TARGET: x86-64
+        run: bash shell/resolve-imagebuilder-version.sh
+
       - name: ✅ 正在构建ImmortalWrt固件25.12.x
         env:
           PROFILE_INPUT: ${{ inputs.profile }}
           INCLUDE_DOCKER: ${{ inputs.include_docker }}
-          LUCI_VERSION: ${{ inputs.luci_version }}
           ENABLE_PPPOE: ${{ inputs.enable_pppoe }}
           PPPOE_ACCOUNT: ${{ inputs.pppoe_account }}
           PPPOE_PASSWORD: ${{ inputs.pppoe_password }}
@@ -122,11 +124,10 @@ jobs:
               ;;
           esac
           echo "ROOTFS_SIZE=$ROOTFS_SIZE" >> "$GITHUB_ENV"
-          image="immortalwrt/imagebuilder:x86-64-openwrt-${LUCI_VERSION}"
+          image="${IMAGEBUILDER_IMAGE}"
           mkdir -p "${{ github.workspace }}/bin" "${{ github.workspace }}/files" "${{ github.workspace }}/custom"
           echo "Building $image with rootfs size: ${ROOTFS_SIZE} MB"
-          # ImageBuilder 镜像已经携带与 LUCI_VERSION 对应的 .config；
-          # 不要覆盖它，否则会把 25.12.1 混成仓库里遗留的 25.12.0-rc1 配置。
+          # ImageBuilder 镜像已经携带与解析版本对应的 .config；不要覆盖它。
           docker run --rm -i \
             --user root \
             --workdir /home/build/immortalwrt \
