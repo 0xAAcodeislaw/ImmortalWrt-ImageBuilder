@@ -3,8 +3,10 @@ set -Eeuo pipefail
 
 # Log file for debugging
 # 目前支持少部分第三方软件apk 通过打开shell/apk-custom-packages.sh的注释来集成
-source shell/apk-custom-packages.sh
+# 必须在 source 前初始化；GitHub Actions 开启 iStore 商店时会向该文件追加
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES ..."，而本脚本启用了 set -u。
 CUSTOM_PACKAGES="${CUSTOM_PACKAGES:-}"
+source shell/apk-custom-packages.sh
 PROFILE="${PROFILE:-}"
 INCLUDE_DOCKER="${INCLUDE_DOCKER:-no}"
 ENABLE_PPPOE="${ENABLE_PPPOE:-no}"
