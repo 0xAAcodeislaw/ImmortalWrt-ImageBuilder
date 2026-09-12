@@ -305,7 +305,9 @@ jobs:
           echo "file=$ROOTFS_FILE" >> $GITHUB_OUTPUT
 
       - name: Package armsr-armv8 as ImmortalWrt by ophub
-        uses: ophub/amlogic-s9xxx-openwrt@main
+        # main currently uses cp --update=none, which fails on the GitHub
+        # runner's cp implementation. Keep the last compatible action commit.
+        uses: ophub/amlogic-s9xxx-openwrt@289d4e6f7af84b41ca752f7e35fb5a534c9410e1
         with:
           openwrt_path: ${{ steps.find_rootfs.outputs.file }}
           openwrt_board: ${{ inputs.openwrt_board }}
