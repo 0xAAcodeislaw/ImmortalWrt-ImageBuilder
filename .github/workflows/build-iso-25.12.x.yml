@@ -160,7 +160,14 @@ jobs:
           set -Eeuo pipefail
           shopt -s nullglob
           images=("${{ github.workspace }}"/bin/targets/x86/64/*squashfs-combined-efi.img.gz)
-          cp "${images[0]}" "${{ github.workspace }}/"
+          if (( ${#images[@]} != 1 )); then
+            echo "Error: expected exactly one EFI firmware archive, found ${#images[@]}." >&2
+            printf '%s\n' "${images[@]}" >&2
+            exit 1
+          fi
+          renamed="${{ github.workspace }}/immortalwrt_${LUCI_VERSION}_x86-64-efi.img.gz"
+          mv "${images[0]}" "$renamed"
+          echo "Renamed firmware to $(basename "$renamed")"
 
       - name: ✅ 上传固件到 artifact (for ISO generation)
         uses: actions/upload-artifact@v6
@@ -198,21 +205,33 @@ jobs:
         run: |
           set -Eeuo pipefail
           shopt -s nullglob
-          firmware_files=("${{ github.workspace }}"/*squashfs-combined-efi.img.gz)
+          firmware_files=("${{ github.workspace }}"/immortalwrt_*_x86-64-efi.img.gz)
           if (( ${#firmware_files[@]} != 1 )); then
             echo "Error: expected exactly one EFI firmware archive, found ${#firmware_files[@]}." >&2
             printf '%s\n' "${firmware_files[@]}" >&2
             exit 1
           fi
           firmware_file="${firmware_files[0]##*/}"
+          firmware_version="${firmware_file#immortalwrt_}"
+          firmware_version="${firmware_version%%_*}"
           cd img-installer
           bash autobuild/autobuild.sh "../$firmware_file"
-          test -s output/custom-installer-x86_64.iso
+          iso="output/immortalwrt_${firmware_version}_x86-64-pve.iso"
+          mv output/custom-installer-x86_64.iso "$iso"
+          test -s "$iso"
 
       - name: Verify PVE bootable ISO
         run: |
           set -Eeuo pipefail
-          iso="${{ github.workspace }}/img-installer/output/custom-installer-x86_64.iso"
+          iso="${{ github.workspace }}/img-installer/output/immortalwrt_*_x86-64-pve.iso"
+          shopt -s nullglob
+          iso_files=( $iso )
+          if (( ${#iso_files[@]} != 1 )); then
+            echo "Error: expected exactly one PVE ISO, found ${#iso_files[@]}." >&2
+            printf '%s\n' "${iso_files[@]}" >&2
+            exit 1
+          fi
+          iso="${iso_files[0]}"
           test -s "$iso"
           file "$iso"
           file "$iso" | grep -q "ISO 9660"
@@ -222,7 +241,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: immortalwrt-25.12-x86-64-pve-iso
-          path: img-installer/output/custom-installer-x86_64.iso
+          path: img-installer/output/immortalwrt_*_x86-64-pve.iso
           if-no-files-found: error
 
       - name: 🚀 上传 ISO 到 Release
@@ -231,5 +250,5 @@ jobs:
           tag_name: "Custom-Installer-x86_64-ISO"
           body_path: "${{ github.workspace }}/img-installer/autobuild/info.md"
           files: |
-            img-installer/output/custom-installer-x86_64.iso
+            img-installer/output/immortalwrt_*_x86-64-pve.iso
           token: "${{ secrets.GITHUB_TOKEN }}"

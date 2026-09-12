@@ -164,6 +164,9 @@ jobs:
             exit 1
           fi
           ls -lh "${images[0]}"
+          renamed="${{ github.workspace }}/bin/targets/x86/64/immortalwrt_${LUCI_VERSION}_x86-64-efi.img.gz"
+          mv "${images[0]}" "$renamed"
+          echo "Renamed firmware to $(basename "$renamed")"
           
 
       - name: Create info
@@ -196,7 +199,7 @@ jobs:
           tag_name: Autobuild-x86-64
           body_path: ${{ github.workspace }}/router-info.md
           files: |
-            ${{ github.workspace }}/bin/targets/x86/64/*squashfs-combined-efi.img.gz
+            ${{ github.workspace }}/bin/targets/x86/64/immortalwrt_*_x86-64-efi.img.gz
           token: ${{ secrets.GITHUB_TOKEN }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
