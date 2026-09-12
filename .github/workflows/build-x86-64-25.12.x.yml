@@ -156,6 +156,7 @@ jobs:
       - name: Verify x86-64 image output
         run: |
           set -Eeuo pipefail
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}/bin"
           shopt -s nullglob
           images=("${{ github.workspace }}"/bin/targets/x86/64/*squashfs-combined-efi.img.gz)
           if (( ${#images[@]} != 1 )); then
