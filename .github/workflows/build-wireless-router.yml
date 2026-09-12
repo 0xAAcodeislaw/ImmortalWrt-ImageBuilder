@@ -651,6 +651,7 @@ jobs:
               -e PPPOE_ACCOUNT=${{ inputs.pppoe_account }} \
               -e PPPOE_PASSWORD=${{ inputs.pppoe_password }} \
             immortalwrt/imagebuilder:$tag /bin/bash /home/build/immortalwrt/build.sh
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}/bin"
           
 
       - name: Create info

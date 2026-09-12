@@ -140,6 +140,7 @@ jobs:
               -e ROOTFS_PARTSIZE=$rootfs_partsize \
               immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
           done
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}/bin"
           
       - name: Download prebuilt rootfs.tar.gz
         if: ${{ github.event.inputs.skip_imagebuilder == 'true' }}

@@ -121,6 +121,7 @@ jobs:
               -e ROOTSIZE=$ROOTFS_SIZE \
               immortalwrt/imagebuilder:sunxi-cortexa53-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
           done
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}/bin"
 
      
       - name: Create info

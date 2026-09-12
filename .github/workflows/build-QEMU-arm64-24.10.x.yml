@@ -110,6 +110,7 @@ jobs:
               -e PPPOE_PASSWORD=${{ inputs.pppoe_password }} \
               immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
           done
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}/bin"
       - name: Copy Firmware to workspace
         run: |
           cp ${{ github.workspace }}/bin/targets/armsr/armv8/*.qcow2 ${{ github.workspace }}

@@ -113,6 +113,7 @@ jobs:
               -e ROOTSIZE=$size \
               immortalwrt/imagebuilder:$tag /bin/bash /home/build/openwrt/build.sh
           done
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}/bin"
           ls ${{ github.workspace }}/bin/targets/bcm27xx/${{ env.cpu }}
       
       - name: Create info
